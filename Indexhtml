@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Red Ball Adventure</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Arial', sans-serif;
+        }
+        
+        #gameContainer {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        #gameCanvas {
+            background: #87CEEB;
+            display: block;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+            font-size: 18px;
+            z-index: 10;
+        }
+        
+        #levelComplete {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+            z-index: 100;
+            border: 3px solid #FFD700;
+        }
+        
+        button {
+            background: #FF4444;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-top: 10px;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #FF6666;
+        }
+        
+        .instructions {
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="instructions">
+            <h2>Red Ball Adventure</h2>
+            <p>Используй ← → или A D для движения, ↑ или W для прыжка</p>
+            <p>Собери все звезды и доберись до флага!</p>
+        </div>
+        
+        <div id="gameContainer">
+            <canvas id="gameCanvas" width="800" height="500"></canvas>
+            <div id="ui">
+                <div>Уровень: <span id="level">1</span></div>
+                <div>Звезды: <span id="stars">0</span>/3</div>
+                <div>Жизни: <span id="lives">3</span></div>
+            </div>
+            <div id="levelComplete">
+                <h2>Уровень пройден!</h2>
+                <p id="completeText"></p>
+                <button id="nextLevel">Следующий уровень</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const levelElement = document.getElementById('level');
+        const starsElement = document.getElementById('stars');
+        const livesElement = document.getElementById('lives');
+        const levelComplete = document.getElementById('levelComplete');
+        const completeText = document.getElementById('completeText');
+        const nextLevelBtn = document.getElementById('nextLevel');
+
+        // Игровые переменные
+        let currentLevel = 1;
+        let starsCollected = 0;
+        let totalStars = 3;
+        let lives = 3;
+        let gameRunning = true;
+
+        // Игрок
+        const player = {
+            x: 100,
+            y: 300,
+            radius: 20,
+            color: '#FF4444',
+            velocityX: 0,
+            velocityY: 0,
+            speed: 5,
+            jumpPower: -12,
+            isOnGround: false,
+            
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = '#990000';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Глаз
+                ctx.beginPath();
+                ctx.arc(this.x + 8, this.y - 5, 5, 0, Math.PI * 2);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(this.x + 10, this.y - 5, 2, 0, Math.PI * 2);
+                ctx.fillStyle = 'black';
+                ctx.fill();
+                
+                // Блик
+                ctx.beginPath();
+                ctx.arc(this.x - 5, this.y - 8, 4, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fill();
+            },
+            
+            update() {
+                // Гравитация
+                if (!this.isOnGround) {
+                    this.velocityY += 0.5;
+                }
+                
+                // Движение
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+                
+                // Границы экрана
+                if (this.x < this.radius) this.x = this.radius;
+                if (this.x > canvas.width - this.radius) this.x = canvas.width - this.radius;
+                if (this.y > canvas.height - this.radius) {
+                    this.y = canvas.height - this.radius;
+                    this.isOnGround = true;
+                    this.velocityY = 0;
+                }
+                
+                // Замедление
+                this.velocityX *= 0.9;
+            },
+            
+            jump() {
+                if (this.isOnGround) {
+                    this.velocityY = this.jumpPower;
+                    this.isOnGround = false;
+                }
+            },
+            
+            moveLeft() {
+                this.velocityX = -this.speed;
+            },
+            
+            moveRight() {
+                this.velocityX = this.speed;
+            }
+        };
+
+        // Звезды
+        const stars = [
+            { x: 300, y: 200, collected: false, radius: 15 },
+            { x: 500, y: 150, collected: false, radius: 15 },
+            { x: 700, y: 250, collected: false, radius: 15 }
+        ];
+
+        // Платформы
+        const platforms = [
+            { x: 0, y: 400, width: 800, height: 100 }, // Земля
+            { x: 200, y: 300, width: 150, height: 20 },
+            { x: 400, y: 250, width: 100, height: 20 },
+            { x: 600, y: 200, width: 150, height: 20 },
+            { x: 300, y: 150, width: 100, height: 20 },
+            { x: 100, y: 100, width: 100, height: 20 }
+        ];
+
+        // Флаг (финиш)
+        const flag = {
+            x: 750,
+            y: 350,
+            width: 30,
+            height: 50,
+            
+            draw() {
+                // Флагшток
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(this.x, this.y, 5, 50);
+                
+                // Флаг
+                ctx.fillStyle = '#4CAF50';
+                ctx.beginPath();
+                ctx.moveTo(this.x + 5, this.y + 10);
+                ctx.lineTo(this.x + 25, this.y + 20);
+                ctx.lineTo(this.x + 5, this.y + 30);
+                ctx.fill();
+            }
+        };
+
+        // Враги
+        const enemies = [
+            { x: 350, y: 380, width: 40, height: 40, direction: 1, speed: 2 },
+            { x: 550, y: 280, width: 40, height: 40, direction: 1, speed: 1.5 }
+        ];
+
+        // Обновление UI
+        function updateUI() {
+            levelElement.textContent = currentLevel;
+            starsElement.textContent = starsCollected;
+            livesElement.textContent = lives;
+        }
+
+        // Рисование платформ
+        function drawPlatforms() {
+            platforms.forEach(platform => {
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                
+                // Текстура
+                ctx.fillStyle = '#A0522D';
+                for (let i = 0; i < platform.width; i += 20) {
+                    ctx.fillRect(platform.x + i, platform.y, 10, 5);
+                }
+            });
+        }
+
+        // Рисование звезд
+        function drawStars() {
+            stars.forEach(star => {
+                if (!star.collected) {
+                    // Анимация пульсации
+                    const pulse = Math.sin(Date.now() / 200) * 2 + star.radius;
+                    
+                    ctx.beginPath();
+                    for (let i = 0; i < 5; i++) {
+                        const angle = (i * 2 * Math.PI / 5) - Math.PI/2;
+                        const spikeX = star.x + Math.cos(angle) * pulse;
+                        const spikeY = star.y + Math.sin(angle) * pulse;
+                        
+                        if (i === 0) {
+                            ctx.moveTo(spikeX, spikeY);
+                        } else {
+                            ctx.lineTo(spikeX, spikeY);
+                        }
+                    }
+                    ctx.closePath();
+                    
+                    ctx.fillStyle = '#FFD700';
+                    ctx.fill();
+                    ctx.strokeStyle = '#FFA500';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // Центр звезды
+                    ctx.beginPath();
+                    ctx.arc(star.x, star.y, pulse/3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#FFFF00';
+                    ctx.fill();
+                }
+            });
+        }
+
+        // Рисование врагов
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                // Тело
+                ctx.fillStyle = '#800080';
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                
+                // Глаза
+                ctx.fillStyle = 'white';
+                ctx.fillRect(enemy.x + 10, enemy.y + 10, 8, 8);
+                ctx.fillRect(enemy.x + 22, enemy.y + 10, 8, 8);
+                
+                ctx.fillStyle = 'red';
+                ctx.fillRect(enemy.x + 12, enemy.y + 12, 4, 4);
+                ctx.fillRect(enemy.x + 24, enemy.y + 12, 4, 4);
+                
+                // Рот
+                ctx.fillStyle = 'black';
+                ctx.fillRect(enemy.x + 10, enemy.y + 25, 20, 5);
+            });
+        }
+
+        // Проверка столкновений
+        function checkCollisions() {
+            // Столкновение с платформами
+            player.isOnGround = false;
+            
+            platforms.forEach(platform => {
+                if (player.x + player.radius > platform.x &&
+                    player.x - player.radius < platform.x + platform.width &&
+                    player.y + player.radius > platform.y &&
+                    player.y - player.radius < platform.y + platform.height) {
+                    
+                    // Определяем, с какой стороны столкновение
+                    const playerBottom = player.y + player.radius;
+                    const playerTop = player.y - player.radius;
+                    const playerRight = player.x + player.radius;
+                    const playerLeft = player.x - player.radius;
+                    
+                    const platformBottom = platform.y + platform.height;
+                    const platformTop = platform.y;
+                    const platformRight = platform.x + platform.width;
+                    const platformLeft = platform.x;
+                    
+                    // Снизу
+                    if (playerBottom > platformTop && 
+                        playerTop < platformTop &&
+                        playerRight > platformLeft &&
+                        playerLeft < platformRight) {
+                        player.y = platformTop - player.radius;
+                        player.velocityY = 0;
+                        player.isOnGround = true;
+                    }
+                    // Сверху
+                    else if (playerTop < platformBottom && 
+                             playerBottom > platformBottom &&
+                             playerRight > platformLeft &&
+                             playerLeft < platformRight) {
+                        player.y = platformBottom + player.radius;
+                        player.velocityY = 0;
+                    }
+                    // Справа
+                    else if (playerRight > platformLeft && 
+                             playerLeft < platformLeft &&
+                             playerBottom > platformTop &&
+                             playerTop < platformBottom) {
+                        player.x = platformLeft - player.radius;
+                        player.velocityX = 0;
+                    }
+                    // Слева
+                    else if (playerLeft < platformRight && 
+                             playerRight > platformRight &&
+                             playerBottom > platformTop &&
+                             playerTop < platformBottom) {
+                        player.x = platformRight + player.radius;
+                        player.velocityX = 0;
+                    }
+                }
+            });
+
+            // Сбор звезд
+            stars.forEach(star => {
+                if (!star.collected) {
+                    const dx = player.x - star.x;
+                    const dy = player.y - star.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < player.radius + star.radius) {
+                        star.collected = true;
+                        starsCollected++;
+                        updateUI();
+                    }
+                }
+            });
+
+            // Столкновение с врагами
+            enemies.forEach(enemy => {
+                if (player.x + player.radius > enemy.x &&
+                    player.x - player.radius < enemy.x + enemy.width &&
+                    player.y + player.radius > enemy.y &&
+                    player.y - player.radius < enemy.y + enemy.height) {
+                    
+                    // Если игрок падает на врага сверху
+                    if (player.velocityY > 0 && 
+                        player.y + player.radius > enemy.y &&
+                        player.y < enemy.y + 10) {
+                        player.velocityY = -10;
+                        enemies.splice(enemies.indexOf(enemy), 1);
+                    } else {
+                        // Потеря жизни
+                        lives--;
+                        updateUI();
+                        player.x = 100;
+                        player.y = 300;
+                        
+                        if (lives <= 0) {
+                            gameOver();
+                        }
+                    }
+                }
+            });
+
+            // Достижение флага
+            if (player.x + player.radius > flag.x &&
+                player.x - player.radius < flag.x + flag.width &&
+                player.y + player.radius > flag.y &&
+                player.y - player.radius < flag.y + flag.height) {
+                
+                if (starsCollected >= totalStars) {
+                    completeLevel();
+                }
+            }
+        }
+
+        // Обновление врагов
+        function updateEnemies() {
+            enemies.forEach(enemy => {
+                enemy.x += enemy.speed * enemy.direction;
+                
+                // Проверка границ движения
+                let onPlatform = false;
+                platforms.forEach(platform => {
+                    if (enemy.x > platform.x && 
+                        enemy.x + enemy.width < platform.x + platform.width &&
+                        enemy.y + enemy.height + 1 >= platform.y &&
+                        enemy.y + enemy.height <= platform.y + 10) {
+                        onPlatform = true;
+                    }
+                });
+                
+                if (!onPlatform || enemy.x <= 0 || enemy.x + enemy.width >= canvas.width) {
+                    enemy.direction *= -1;
+                }
+            });
+        }
+
+        // Завершение уровня
+        function completeLevel() {
+            gameRunning = false;
+            completeText.textContent = `Собрано звезд: ${starsCollected}/${totalStars}`;
+            levelComplete.style.display = 'block';
+        }
+
+        // Конец игры
+        function gameOver() {
+            gameRunning = false;
+            completeText.textContent = 'Игра окончена!';
+            levelComplete.style.display = 'block';
+            nextLevelBtn.textContent = 'Начать заново';
+        }
+
+        // Следующий уровень
+        function nextLevel() {
+            if (lives <= 0) {
+                // Перезапуск игры
+                currentLevel = 1;
+                starsCollected = 0;
+                lives = 3;
+                
+                // Сброс звезд
+                stars.forEach(star => {
+                    star.collected = false;
+                });
+                
+                // Восстановление врагов
+                enemies.length = 0;
+                enemies.push(
+                    { x: 350, y: 380, width: 40, height: 40, direction: 1, speed: 2 },
+                    { x: 550, y: 280, width: 40, height: 40, direction: 1, speed: 1.5 }
+                );
+            } else {
+                currentLevel++;
+                totalStars += 1;
+                
+                // Добавление новой звезды
+                stars.push({
+                    x: Math.random() * 600 + 100,
+                    y: Math.random() * 200 + 100,
+                    collected: false,
+                    radius: 15
+                });
+                
+                // Добавление нового врага
+                enemies.push({
+                    x: Math.random() * 600 + 100,
+                    y: 380,
+                    width: 40,
+                    height: 40,
+                    direction: 1,
+                    speed: Math.random() * 2 + 1
+                });
+                
+                // Перемещение флага
+                flag.x = Math.random() * 400 + 350;
+                flag.y = Math.random() * 100 + 300;
+                
+                // Сброс позиции игрока
+                player.x = 100;
+                player.y = 300;
+            }
+            
+            updateUI();
+            levelComplete.style.display = 'none';
+            gameRunning = true;
+            gameLoop();
+        }
+
+        // Игровой цикл
+        function gameLoop() {
+            if (!gameRunning) return;
+            
+            // Очистка canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Обновление
+            player.update();
+            updateEnemies();
+            checkCollisions();
+            
+            // Отрисовка
+            drawPlatforms();
+            drawStars();
+            drawEnemies();
+            flag.draw();
+            player.draw();
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Управление
+        const keys = {};
+        
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            
+            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') {
+                player.jump();
+            }
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+        
+        // Обработка движения
+        function handleInput() {
+            if (keys['ArrowLeft'] || keys['a']) {
+                player.moveLeft();
+            }
+            if (keys['ArrowRight'] || keys['d']) {
+                player.moveRight();
+            }
+        }
+        
+        // Обновление ввода
+        setInterval(handleInput, 16);
+        
+        // Кнопка следующего уровня
+        nextLevelBtn.addEventListener('click', nextLevel);
+        
+        // Начало игры
+        updateUI();
+        gameLoop();
+    </script>
+</body>
+</html>
